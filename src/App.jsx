@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export default function App() {
   const iframeRef = useRef(null);
-
   // in parent: initial doc
   const [doc, setDoc] = useState({
     root: {
@@ -25,7 +24,6 @@ export default function App() {
       ],
     },
   });
-
   const [selectedId, setSelectedId] = useState(null);
   const [rect, setRect] = useState(null);
 
@@ -74,6 +72,11 @@ export default function App() {
     if (selectedId) requestRect(selectedId);
   }, [doc]);
 
+  // after setDoc(...) completes, React will re-render; we can request rect:
+  useEffect(() => {
+    if (selectedId) requestRect(selectedId);
+  }, [doc]); // you likely already have this; keep it
+
   function postToIframe(message) {
     const w = iframeRef.current?.contentWindow;
     if (w) w.postMessage(message, "*");
@@ -105,6 +108,56 @@ export default function App() {
   function setStyle(id, key, value) {
     patchStyles(id, { [key]: value || undefined });
     requestRect(id); // keep overlay aligned after size changes
+  }
+
+  // function moveBlockUpOrDown(id, direction /* 'up' | 'down' */) {
+  //   setDoc((prev) => {
+  //     const next = { ...prev, root: { ...prev.root } };
+  //     const arr = [...next.root.children];
+  //     const i = arr.findIndex((b) => b.id === id);
+  //     if (i === -1) return prev;
+  //     const j = direction === "up" ? i - 1 : i + 1;
+  //     if (j < 0 || j >= arr.length) return prev;
+  //     const [item] = arr.splice(i, 1);
+  //     arr.splice(j, 0, item);
+  //     next.root.children = arr;
+  //     return next;
+  //   });
+  // }
+
+  // function selectAndRefresh(id) {
+  //   setSelectedId(id);
+  //   requestRect(id);
+  // }
+
+  function findParentAndIndex(node, id, parent = null) {
+    if (!node) return null;
+    const children = node.children || [];
+    for (let i = 0; i < children.length; i++) {
+      const ch = children[i];
+      if (ch.id === id) return { parent: node, index: i };
+      const deep = findParentAndIndex(ch, id, node);
+      if (deep) return deep;
+    }
+    return null;
+  }
+
+  function moveSelectedUpOrDown(doc, id, direction /* 'up' | 'down' */) {
+    const cloned = JSON.parse(JSON.stringify(doc));
+    const info = findParentAndIndex(cloned.root, id);
+    if (!info) return doc; // not found
+    const arr = info.parent.children;
+    const i = info.index;
+    const j = direction === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= arr.length) return doc; // out of bounds
+    const [item] = arr.splice(i, 1);
+    arr.splice(j, 0, item);
+    return cloned;
+  }
+
+  function moveSelected(direction) {
+    if (!selectedId) return;
+    setDoc((prev) => moveSelectedUpOrDown(prev, selectedId, direction));
   }
 
   return (
@@ -145,7 +198,70 @@ export default function App() {
 
       {/* Sidebar UI */}
       <div style={{ padding: 16, background: "#f8fafc" }}>
-        <h3>Inspector</h3>
+        <h3 style={{ margin: 0 }}>Inspector</h3>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+          {selectedId ? "Element selected" : "Click an element in the preview"}
+        </div>
+
+        {/* Show only when an element is selected */}
+        {selectedId &&
+          (() => {
+            const info = findParentAndIndex(doc.root, selectedId);
+            const atTop = info && info.index === 0;
+            const atBottom =
+              info &&
+              info.parent?.children &&
+              info.index === info.parent.children.length - 1;
+
+            return (
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                  Layer controls
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => moveSelected("up")}
+                    disabled={atTop}
+                    style={{
+                      padding: "6px 10px",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 6,
+                      background: "#fff",
+                    }}
+                    title="Move up"
+                  >
+                    ↑ Up
+                  </button>
+                  <button
+                    onClick={() => moveSelected("down")}
+                    disabled={atBottom}
+                    style={{
+                      padding: "6px 10px",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 6,
+                      background: "#fff",
+                    }}
+                    title="Move down"
+                  >
+                    ↓ Down
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+                  Sibling {info ? info.index + 1 : "—"} of{" "}
+                  {info?.parent?.children?.length ?? "—"}
+                </div>
+              </div>
+            );
+          })()}
+
         <p>Selected: {selectedId || "—"}</p>
 
         {selectedBlock && (

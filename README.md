@@ -1425,3 +1425,110 @@ function setStyle(id, key, value) {
 * No console errors.
 
 Want Lesson 6 next: **Reorder blocks (drag to move above/below)** or **Image block + live resizing handles**?
+
+---
+
+---
+
+---
+
+# **Lesson 6A**
+great call — let’s make the **Layers controls appear only when something is selected**, and make the **Up/Down** act within that element’s siblings.
+
+### 1) Add generic tree helpers (works for nested blocks too)
+
+```jsx
+function findParentAndIndex(node, id, parent = null) {
+  if (!node) return null;
+  const children = node.children || [];
+  for (let i = 0; i < children.length; i++) {
+    const ch = children[i];
+    if (ch.id === id) return { parent: node, index: i };
+    const deep = findParentAndIndex(ch, id, node);
+    if (deep) return deep;
+  }
+  return null;
+}
+
+function moveSelectedUpOrDown(doc, id, direction /* 'up' | 'down' */) {
+  const cloned = JSON.parse(JSON.stringify(doc));
+  const info = findParentAndIndex(cloned.root, id);
+  if (!info) return doc; // not found
+  const arr = info.parent.children;
+  const i = info.index;
+  const j = direction === 'up' ? i - 1 : i + 1;
+  if (j < 0 || j >= arr.length) return doc; // out of bounds
+  const [item] = arr.splice(i, 1);
+  arr.splice(j, 0, item);
+  return cloned;
+}
+```
+
+### 2) Hook up move helpers
+
+```jsx
+function moveSelected(direction) {
+  if (!selectedId) return;
+  setDoc(prev => moveSelectedUpOrDown(prev, selectedId, direction));
+}
+```
+
+> Keep your existing `useEffect(() => { if (selectedId) requestRect(selectedId); }, [doc])` so the blue outline updates after reordering.
+
+### 3) Sidebar: show “Layer controls” **only when selected**
+
+Replace your Layers panel with this compact control:
+
+```jsx
+{/* Sidebar */}
+<div style={{ padding: 16, background: "#f8fafc" }}>
+  <h3 style={{ margin: 0 }}>Inspector</h3>
+  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+    {selectedId ? "Element selected" : "Click an element in the preview"}
+  </div>
+
+  {/* Show only when an element is selected */}
+  {selectedId && (() => {
+    const info = findParentAndIndex(doc.root, selectedId);
+    const atTop = info && info.index === 0;
+    const atBottom = info && info.parent?.children && info.index === info.parent.children.length - 1;
+
+    return (
+      <div style={{ 
+        background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, padding:12, marginBottom:12 
+      }}>
+        <div style={{ fontWeight:600, marginBottom:8 }}>Layer controls</div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button
+            onClick={() => moveSelected('up')}
+            disabled={atTop}
+            style={{ padding:"6px 10px", border:"1px solid #cbd5e1", borderRadius:6, background:"#fff" }}
+            title="Move up"
+          >↑ Up</button>
+          <button
+            onClick={() => moveSelected('down')}
+            disabled={atBottom}
+            style={{ padding:"6px 10px", border:"1px solid #cbd5e1", borderRadius:6, background:"#fff" }}
+            title="Move down"
+          >↓ Down</button>
+        </div>
+        <div style={{ fontSize:12, color:"#64748b", marginTop:8 }}>
+          Sibling {info ? info.index + 1 : "—"} of {info?.parent?.children?.length ?? "—"}
+        </div>
+      </div>
+    );
+  })()}
+
+  {/* keep your existing style inspector below */}
+  {/* ... */}
+</div>
+```
+
+### 4) Quick test
+
+* Click any element → **Layer controls** appear.
+* Press **Up/Down** → element moves among **its siblings** (not just top-level).
+* The blue selection outline updates and stays on the same element.
+
+Want to do **drag-to-reorder** next (sidebar list OR in-canvas drag with insertion indicators)?
+
