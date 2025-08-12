@@ -1,94 +1,132 @@
- <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <style>
-          *{ box-sizing: border-box; }
-          body { margin: 0; font-family: system-ui, sans-serif; padding: 20px; }
-          .clickable:hover { outline: 2px solid #3b82f6; cursor: pointer; }
-          #root > div { padding: 6px 0; }
-        </style>
-      </head>
-      <body>
-        <div id="root"></div>
-        <script>
-          let state = { doc: null };
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        padding: 20px;
+      }
+      .clickable:hover {
+        outline: 2px solid #3b82f6;
+        cursor: pointer;
+      }
+      #root > div {
+        padding: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      let state = { doc: null };
 
-          function render() {
-            const rootEl = document.getElementById('root');
-            rootEl.innerHTML = '';
-            if (!state.doc) return;
-            state.doc.root.children.forEach(block => {
-              const el = document.createElement('div');
-              el.setAttribute('data-editor-id', block.id);
-              el.className = 'clickable';
-              el.textContent = block.text || '';
-              el.addEventListener('dblclick', () => startInlineEdit(block.id, el));
-              rootEl.appendChild(el);
-            });
+      function render() {
+        const rootEl = document.getElementById("root");
+        rootEl.innerHTML = "";
+        if (!state.doc) return;
+        state.doc.root.children.forEach((block) => {
+          const el = document.createElement("div");
+          el.setAttribute("data-editor-id", block.id);
+          el.className = "clickable";
+          el.textContent = block.text || "";
+
+          applyInlineStyles(el, block.styles?.inline);
+
+          el.addEventListener("dblclick", () => startInlineEdit(block.id, el));
+          rootEl.appendChild(el);
+        });
+      }
+
+      function applyInlineStyles(el, inline) {
+        if (!inline) return;
+        for (const k in inline) {
+          try {
+            el.style[k] = inline[k];
+          } catch {}
+        }
+      }
+
+      function startInlineEdit(id, el) {
+        el.setAttribute("contenteditable", "true");
+        el.focus();
+        const onBlur = () => {
+          window.parent.postMessage(
+            {
+              type: "inlineEditCommit",
+              id,
+              text: el.textContent,
+            },
+            "*"
+          );
+          cleanup();
+        };
+        const onKey = (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            el.blur();
           }
+        };
+        function cleanup() {
+          el.removeAttribute("contenteditable");
+          el.removeEventListener("blur", onBlur);
+          el.removeEventListener("keydown", onKey);
+        }
+        el.addEventListener("blur", onBlur);
+        el.addEventListener("keydown", onKey);
+      }
 
-          function startInlineEdit(id, el) {
-            el.setAttribute('contenteditable', 'true');
-            el.focus();
-            const onBlur = () => {
-              window.parent.postMessage({
-                type: 'inlineEditCommit',
-                id,
-                text: el.textContent
-              }, '*');
-              cleanup();
-            };
-            const onKey = e => {
-              if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
-            };
-            function cleanup() {
-              el.removeAttribute('contenteditable');
-              el.removeEventListener('blur', onBlur);
-              el.removeEventListener('keydown', onKey);
-            }
-            el.addEventListener('blur', onBlur);
-            el.addEventListener('keydown', onKey);
-          }
+      function getRectForId(id) {
+        const el = document.querySelector(
+          '[data-editor-id="' + CSS.escape(id) + '"]'
+        );
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left, y: r.top, width: r.width, height: r.height };
+      }
 
-          function getRectForId(id) {
-            const el = document.querySelector('[data-editor-id=\"'+CSS.escape(id)+'\"]');
-            if (!el) return null;
-            const r = el.getBoundingClientRect();
-            return { x: r.left, y: r.top, width: r.width, height: r.height };
-          }
+      // receive messages from parent
+      window.addEventListener("message", (e) => {
+        const msg = e.data;
+        if (!msg || typeof msg !== "object") return;
 
-          // receive messages from parent
-          window.addEventListener('message', e => {
-            const msg = e.data;
-            if (!msg || typeof msg !== 'object') return;
+        if (msg.type === "hydrate") {
+          state.doc = msg.doc;
+          render();
+          window.parent.postMessage({ type: "layoutChanged" }, "*");
+        }
+        if (msg.type === "getRect") {
+          const rect = getRectForId(msg.id);
+          window.parent.postMessage({ type: "rect", id: msg.id, rect }, "*");
+        }
+      });
 
-            if (msg.type === 'hydrate') {
-              state.doc = msg.doc;
-              render();
-              window.parent.postMessage({ type: 'layoutChanged' }, '*');
-            }
-            if (msg.type === 'getRect') {
-              const rect = getRectForId(msg.id);
-              window.parent.postMessage({ type:'rect', id: msg.id, rect }, '*');
-            }
-          });
+      // click → notify parent
+      document.addEventListener(
+        "click",
+        (e) => {
+          const el = e.target.closest("[data-editor-id]");
+          if (!el) return;
+          window.parent.postMessage(
+            { type: "clicked", id: el.getAttribute("data-editor-id") },
+            "*"
+          );
+        },
+        true
+      );
 
-          // click → notify parent
-          document.addEventListener('click', e => {
-            const el = e.target.closest('[data-editor-id]');
-            if (!el) return;
-            window.parent.postMessage({ type:'clicked', id: el.getAttribute('data-editor-id') }, '*');
-          }, true);
+      // notify on layout changes
+      const ro = new ResizeObserver(() => {
+        window.parent.postMessage({ type: "layoutChanged" }, "*");
+      });
+      ro.observe(document.body);
 
-          // notify on layout changes
-          const ro = new ResizeObserver(() => {
-            window.parent.postMessage({ type:'layoutChanged' }, '*');
-          });
-          ro.observe(document.body);
-
-          // tell parent we're ready to be hydrated
-          window.parent.postMessage({ type: 'ready' }, '*');
-        </script>
-      </body>
-    </html>
+      // tell parent we're ready to be hydrated
+      window.parent.postMessage({ type: "ready" }, "*");
+    </script>
+  </body>
+</html>
