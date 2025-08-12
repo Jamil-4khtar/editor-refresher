@@ -1245,7 +1245,7 @@ Ready for **Lesson 5 (CSS style editing from the sidebar)**?
 
 ---
 
-# awesome — Lesson 5: **CSS style editing from the sidebar (live)**
+# Lesson 5: **CSS style editing from the sidebar (live)**
 
 ### Goal
 
